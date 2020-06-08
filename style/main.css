@@ -1,1 +1,4 @@
-
+@font-face {
+    font-family: 'BirdSeed-Regular';
+    src: url('/src/assets/fonts/BirdSeed-Regular.ttf') format('truetype');
+}

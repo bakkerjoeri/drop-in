@@ -1,23 +1,21 @@
 import repeat from '@bakkerjoeri/repeat';
 import { choose } from 'roll-the-bones';
+import type { Player } from './main';
 
 export interface GameBoard {
     id: string;
-    currentPlayer: 'red' | 'yellow';
     isGameBoard: true;
     tiles: TileMap
 }
 
-export type TileMap = (string | null)[][];
+export type TileMap = (Player | null)[][];
 
 export function createGameBoard(width: number, height: number): Omit<GameBoard, 'id'> {
     return {
-        currentPlayer: choose(['red', 'yellow']),
         isGameBoard: true,
         tiles: createTileMap(width, height),
     }
 }
-
 
 function createTileMap(width: number, height: number): TileMap {
     const tileMap: TileMap = [];

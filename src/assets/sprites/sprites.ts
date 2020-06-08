@@ -24,6 +24,61 @@ const spriteSheet: SpriteSheet = [
         offset: {x: 0, y: 0},
     },
     {
+        name: 'coin-yellow',
+        frames: [
+            {
+                file: 'src/assets/sprites/coins.png',
+                origin: { x: 0, y: 32},
+                size: {width: 16, height: 16 },
+            }
+        ],
+        offset: {x: 0, y: 0},
+    },
+    {
+        name: 'coin-green',
+        frames: [
+            {
+                file: 'src/assets/sprites/coins.png',
+                origin: { x: 0, y: 48},
+                size: {width: 16, height: 16 },
+            }
+        ],
+        offset: {x: 0, y: 0},
+    },
+    {
+        name: 'coin-purple',
+        frames: [
+            {
+                file: 'src/assets/sprites/coins.png',
+                origin: { x: 0, y: 64},
+                size: {width: 16, height: 16 },
+            }
+        ],
+        offset: {x: 0, y: 0},
+    },
+    {
+        name: 'coin-white',
+        frames: [
+            {
+                file: 'src/assets/sprites/coins.png',
+                origin: { x: 0, y: 80},
+                size: {width: 16, height: 16 },
+            }
+        ],
+        offset: {x: 0, y: 0},
+    },
+    {
+        name: 'coin-black',
+        frames: [
+            {
+                file: 'src/assets/sprites/coins.png',
+                origin: { x: 0, y: 96},
+                size: {width: 16, height: 16 },
+            }
+        ],
+        offset: {x: 0, y: 0},
+    },
+    {
         name: 'board-position-front',
         frames: [
             {

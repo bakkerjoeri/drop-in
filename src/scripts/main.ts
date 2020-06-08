@@ -1,27 +1,37 @@
 import {
-    Game, Size, EventEmitter, addEntity, GameState, findEntity, getEntities, setEntities, addSprite, importSpriteSheet, drawSprite, getSprite
+    Game, Size, EventEmitter, addEntity, GameState, findEntity, getEntities, setEntities, importSpriteSheet, drawSprite, getSprite, defaultState
 } from 'heks';
 import { pipe } from '@bakkerjoeri/fp';
 import { createGameBoard, GameBoard, TileMap } from './gameboard';
 import { DropInEvents } from './events';
 import Keyboard from './keyboard';
 import spriteSheet from '../assets/sprites/sprites';
+import { choose } from 'roll-the-bones';
+import pick from './utilities/pick';
 
-const scale = 4;
+export type Player = 'red' | 'blue' | 'yellow' | 'green' | 'purple' | 'white' | 'black';
+
+interface State extends GameState {
+    round: {
+        phase: 'start' | 'startTurn' | 'decideMove' | 'endTurn' | 'end';
+        boardSize: Size;
+        positionToPlacePiece: number;
+        connectToWin: number;
+        players: Player[];
+        currentPlayer: Player | null;
+        winner: Player | null;
+    };
+}
+
 const gameSize: Size = {
     width: 320,
     height: 180,
 };
 
-const boardOrigin = {
-    x: 40,
-    y: 40,
-}
-
 const tileSize = {
     width: 16,
     height: 16,
-}
+};
 
 /**
  * Game parameters
@@ -29,34 +39,108 @@ const tileSize = {
 const boardSize = {
     width: 8,
     height: 6,
-}
+};
 
-const connectHowMany = 4;
+const boardOrigin = {
+    x: (gameSize.width / 2) - ((boardSize.width / 2) * tileSize.width),
+    y: 40,
+};
+
+const connectToWin = 4;
+const amountOfPlayers = 2;
 
 const eventEmitter = new EventEmitter<DropInEvents>();
-const game = new Game(gameSize, eventEmitter, { scale, containerSelector: '.game' });
+const game = new Game<State>(gameSize, eventEmitter, {
+    initialState: {
+        ...defaultState,
+        round: {
+            phase: 'start',
+            boardSize: boardSize,
+            connectToWin,
+            players: pick(['red', 'blue', 'yellow', 'green', 'purple', 'white', 'black'], amountOfPlayers),
+            currentPlayer: null,
+            positionToPlacePiece: Math.floor((boardSize.width - 1) / 2),
+            winner: null,
+        },
+    },
+    containerSelector: '.game',
+});
 new Keyboard(eventEmitter);
 
-eventEmitter.on('start', (state: GameState): GameState => {
+eventEmitter.on('start', (state: State): State => {
     return pipe(
         importSpriteSheet(spriteSheet),
-        addEntity(createGameBoard(boardSize.width, boardSize.height)),
+        addEntity(createGameBoard(state.round.boardSize.width, state.round.boardSize.height)),
     )(state);
 });
 
-eventEmitter.on('keyUp', (state: GameState, { key }, { emit }): GameState => {
+eventEmitter.on('update', (state: State): State => {
+    if (state.round.phase === 'start') {
+        state.round.currentPlayer = choose(state.round.players);
+        state.round.phase = 'startTurn';
+    }
+
+    return state;
+});
+
+eventEmitter.on('update', (state: State): State => {
+    if (state.round.phase === 'startTurn') {
+        // state.round.positionToPlacePiece = Math.floor((state.round.boardSize.width - 1) / 2);
+        state.round.phase = 'decideMove';
+
+        // console.log(state);
+    }
+
+    return state;
+});
+
+eventEmitter.on('update', (state: State): State => {
+    if (state.round.phase === 'endTurn') {
+        const gameBoard = findEntity(getEntities(state), { isGameBoard: true }) as GameBoard;
+        const winner = findWinner(gameBoard.tiles, state.round.connectToWin);
+
+        if (winner) {
+            return {
+                ...state,
+                round: {
+                    ...state.round,
+                    winner: winner,
+                    phase: 'end',
+                },
+            };
+        }
+
+        const currentPlayer = state.round.currentPlayer as Player;
+        const currentPlayerIndex = state.round.players.indexOf(currentPlayer)
+        const nextPlayerIndex = (currentPlayerIndex + 1) % state.round.players.length;
+        const nextPlayer = state.round.players[nextPlayerIndex];
+
+        return {
+            ...state,
+            round: {
+                ...state.round,
+                currentPlayer: nextPlayer,
+                phase: 'startTurn',
+            },
+        }
+    }
+
+    return state;
+});
+
+eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
+    if (state.round.phase !== 'decideMove') {
+        return state;
+    }
+
     const keyAsInteger = parseInt(key);
     const isNumericKey = typeof keyAsInteger === 'number' && !isNaN(keyAsInteger);
 
-    if (!isNumericKey || !(keyAsInteger >= 1 && keyAsInteger <= boardSize.width)) {
+    if (!isNumericKey || !(keyAsInteger >= 1 && keyAsInteger <= state.round.boardSize.width)) {
         return state;
     }
 
     const gameBoard = findEntity(getEntities(state), { isGameBoard: true }) as GameBoard;
-
-    if (!gameBoard) {
-        return state;
-    }
     const columnIndex = keyAsInteger - 1;
     const column = gameBoard.tiles[columnIndex];
 
@@ -72,30 +156,72 @@ eventEmitter.on('keyUp', (state: GameState, { key }, { emit }): GameState => {
         return state;
     }
     
-    gameBoard.tiles[columnIndex][indexOfFirstFullCell - 1] = gameBoard.currentPlayer;
-    state = setEntities(gameBoard)(state);
+    gameBoard.tiles[columnIndex][indexOfFirstFullCell - 1] = state.round.currentPlayer;
     
-    return emit('endTurn', state, {});
+    return {
+        ...state,
+        ...setEntities(gameBoard)(state),
+        round: {
+            ...state.round,
+            phase: 'endTurn',
+        },
+    };
 });
 
-eventEmitter.on('endTurn', (state: GameState): GameState => {
-    const gameBoard = findEntity(getEntities(state), { isGameBoard: true }) as GameBoard;
-
-    if (!gameBoard) {
+eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
+    if (state.round.phase !== 'decideMove') {
         return state;
     }
 
-    const winner = findWinner(gameBoard.tiles, connectHowMany);
-
-    if (winner) {
-        alert(`The winner is... ${winner}`);
+    if (key === 'arrowright' || key === 'd') {
+        state.round.positionToPlacePiece = Math.min(state.round.boardSize.width - 1, state.round.positionToPlacePiece + 1);
     }
 
-    gameBoard.currentPlayer = gameBoard.currentPlayer === 'red' ? 'yellow' : 'red';
-    return setEntities(gameBoard)(state);
+    if (key === 'arrowleft' || key === 'a') {
+        state.round.positionToPlacePiece = Math.max(0, state.round.positionToPlacePiece - 1);
+    }
+
+    return state;
 });
 
-function findWinner(tiles: TileMap, chainLength = 4): string | null {
+eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
+    if (state.round.phase !== 'decideMove') {
+        return state;
+    }
+
+    if (key === 'arrowdown' || key === 's') {
+        const gameBoard = findEntity(getEntities(state), { isGameBoard: true }) as GameBoard;
+        const columnIndex = state.round.positionToPlacePiece;
+        const column = gameBoard.tiles[state.round.positionToPlacePiece];
+
+        // The cell that will receive the tile is the one before the first filled cell
+        let indexOfFirstFullCell = 0;
+        let cellToInspect = column[indexOfFirstFullCell];
+        while(cellToInspect === null && indexOfFirstFullCell <= column.length - 1) {
+            indexOfFirstFullCell += 1;
+            cellToInspect = column[indexOfFirstFullCell];
+        }
+
+        if (indexOfFirstFullCell === 0) {
+            return state;
+        }
+        
+        gameBoard.tiles[columnIndex][indexOfFirstFullCell - 1] = state.round.currentPlayer;
+        
+        return {
+            ...state,
+            ...setEntities(gameBoard)(state),
+            round: {
+                ...state.round,
+                phase: 'endTurn',
+            },
+        };
+    }
+
+    return state;
+});
+
+function findWinner(tiles: TileMap, chainLength = 4): Player | null {
     for (let columnIndex = 0; columnIndex < tiles.length; columnIndex += 1) { // iterate columns, left to right
         for (let rowIndex = 0; rowIndex < tiles[columnIndex].length; rowIndex += 1) { // iterate rows, top to bottom
             const playerOccupyingCell = tiles[columnIndex][rowIndex];
@@ -143,25 +269,54 @@ function findWinner(tiles: TileMap, chainLength = 4): string | null {
     return null;
 }
 
-eventEmitter.on('draw', (state: GameState, { context }): GameState => {
-    const gameBoard = findEntity(getEntities(state), { isGameBoard: true }) as GameBoard;
-
-    if (!gameBoard) {
-        return state;
-    }
-
-    context.clearRect(0, 0, gameSize.width * scale, gameSize.height * scale);
+eventEmitter.on('draw', (state: State, { context }): State => {
+    context.clearRect(0, 0, gameSize.width, gameSize.height);
     context.fillStyle = '#D7D0FF';
-    context.fillRect(0, 0, gameSize.width * scale, gameSize.height * scale);
+    context.fillRect(0, 0, gameSize.width, gameSize.height);
+
+    return state;
+});
+
+eventEmitter.on('draw', (state: State, { context }): State => {
+    const gameBoard = findEntity(getEntities(state), { isGameBoard: true }) as GameBoard;
 
     drawBoardBack(gameBoard, context, state);
     drawCoinsInBoard(gameBoard, context, state);
     drawBoardFront(gameBoard, context, state);
 
+    if (state.round.phase === 'end' && state.round.winner) {
+        drawSprite(
+            getSprite(state, `coin-${state.round.currentPlayer}`),
+            context,
+            {
+                x: (gameSize.width / 2) - (tileSize.width / 2),
+                y: 4
+            }
+        );
+        context.fillStyle = '#000000';
+        context.font = '10px BirdSeed-Regular';
+        context.fillText('wins!', (gameSize.width / 2) - 12, 28);
+    }
+
     return state;
 });
 
-function drawCoinsInBoard(gameBoard: GameBoard, context: CanvasRenderingContext2D, state: GameState) {
+eventEmitter.on('draw', (state: State, { context }): State => {
+    if (state.round.phase === 'decideMove') {
+        drawSprite(
+            getSprite(state, `coin-${state.round.currentPlayer}`),
+            context,
+            {
+                x: boardOrigin.x + (state.round.positionToPlacePiece * tileSize.width),
+                y: boardOrigin.y - Math.floor(1.5 * tileSize.height),
+            }
+        );
+    }
+
+    return state;
+});
+
+function drawCoinsInBoard(gameBoard: GameBoard, context: CanvasRenderingContext2D, state: State) {
     gameBoard.tiles.forEach((row, rowIndex) => {
         row.forEach((cell, columnIndex) => {
             const coinOrigin = {
@@ -171,18 +326,16 @@ function drawCoinsInBoard(gameBoard: GameBoard, context: CanvasRenderingContext2
 
             if (cell !== null) {
                 drawSprite(
-                    getSprite(state, cell === 'red' ? 'coin-red' : 'coin-blue'),
+                    getSprite(state, `coin-${cell}`),
                     context,
                     coinOrigin,
-                    0,
-                    { scale },
                 );
             }
         });
     });
 }
 
-function drawBoardBack(gameBoard: GameBoard, context: CanvasRenderingContext2D, state: GameState) {
+function drawBoardBack(gameBoard: GameBoard, context: CanvasRenderingContext2D, state: State) {
     gameBoard.tiles.forEach((row, rowIndex) => {
         row.forEach((cell, columnIndex) => {
             const cellOrigin = {
@@ -194,8 +347,6 @@ function drawBoardBack(gameBoard: GameBoard, context: CanvasRenderingContext2D, 
                 getSprite(state, 'board-position-back'),
                 context,
                 cellOrigin,
-                0,
-                { scale },
             );
 
             if (columnIndex === 0) {
@@ -203,8 +354,6 @@ function drawBoardBack(gameBoard: GameBoard, context: CanvasRenderingContext2D, 
                     getSprite(state, 'board-column-top-front'),
                     context,
                     { x: cellOrigin.x, y: cellOrigin.y - 8 },
-                    0,
-                    { scale },
                 );
             }
 
@@ -213,8 +362,6 @@ function drawBoardBack(gameBoard: GameBoard, context: CanvasRenderingContext2D, 
                     getSprite(state, 'board-column-bottom-front'),
                     context,
                     { x: cellOrigin.x, y: cellOrigin.y + tileSize.height },
-                    0,
-                    { scale },
                 );
             }
 
@@ -223,8 +370,6 @@ function drawBoardBack(gameBoard: GameBoard, context: CanvasRenderingContext2D, 
                     getSprite(state, 'board-row-left-front'),
                     context,
                     { x: cellOrigin.x - 8, y: cellOrigin.y },
-                    0,
-                    { scale },
                 );
             }
 
@@ -233,8 +378,6 @@ function drawBoardBack(gameBoard: GameBoard, context: CanvasRenderingContext2D, 
                     getSprite(state, 'board-row-right-front'),
                     context,
                     { x: cellOrigin.x + tileSize.width, y: cellOrigin.y },
-                    0,
-                    { scale },
                 );
             }
 
@@ -243,8 +386,6 @@ function drawBoardBack(gameBoard: GameBoard, context: CanvasRenderingContext2D, 
                     getSprite(state, 'board-corner-top-left-front'),
                     context,
                     { x: cellOrigin.x - 8, y: cellOrigin.y - 8 },
-                    0,
-                    { scale },
                 );
             }
 
@@ -253,8 +394,6 @@ function drawBoardBack(gameBoard: GameBoard, context: CanvasRenderingContext2D, 
                     getSprite(state, 'board-corner-top-right-front'),
                     context,
                     { x: cellOrigin.x + tileSize.width, y: cellOrigin.y - 8 },
-                    0,
-                    { scale },
                 );
             }
 
@@ -263,8 +402,6 @@ function drawBoardBack(gameBoard: GameBoard, context: CanvasRenderingContext2D, 
                     getSprite(state, 'board-corner-bottom-right-front'),
                     context,
                     { x: cellOrigin.x + tileSize.width, y: cellOrigin.y + tileSize.height },
-                    0,
-                    { scale },
                 );
             }
 
@@ -273,15 +410,13 @@ function drawBoardBack(gameBoard: GameBoard, context: CanvasRenderingContext2D, 
                     getSprite(state, 'board-corner-bottom-left-front'),
                     context,
                     { x: cellOrigin.x - 8, y: cellOrigin.y + tileSize.height },
-                    0,
-                    { scale },
                 );
             }
         });
     });
 }
 
-function drawBoardFront(gameBoard: GameBoard, context: CanvasRenderingContext2D, state: GameState) {
+function drawBoardFront(gameBoard: GameBoard, context: CanvasRenderingContext2D, state: State) {
     gameBoard.tiles.forEach((row, rowIndex) => {
         row.forEach((cell, columnIndex) => {
             const cellOrigin = {
@@ -293,8 +428,6 @@ function drawBoardFront(gameBoard: GameBoard, context: CanvasRenderingContext2D,
                 getSprite(state, 'board-position-front'),
                 context,
                 cellOrigin,
-                0,
-                { scale },
             );
 
             if (columnIndex === 0) {
@@ -302,8 +435,6 @@ function drawBoardFront(gameBoard: GameBoard, context: CanvasRenderingContext2D,
                     getSprite(state, 'board-column-top-back'),
                     context,
                     { x: cellOrigin.x, y: cellOrigin.y - 8 },
-                    0,
-                    { scale },
                 );
             }
 
@@ -312,8 +443,6 @@ function drawBoardFront(gameBoard: GameBoard, context: CanvasRenderingContext2D,
                     getSprite(state, 'board-corner-top-left-back'),
                     context,
                     { x: cellOrigin.x - 8, y: cellOrigin.y - 8 },
-                    0,
-                    { scale },
                 );
             }
 
@@ -322,17 +451,10 @@ function drawBoardFront(gameBoard: GameBoard, context: CanvasRenderingContext2D,
                     getSprite(state, 'board-corner-top-right-back'),
                     context,
                     { x: cellOrigin.x + tileSize.width, y: cellOrigin.y - 8 },
-                    0,
-                    { scale },
                 );
             }
         });
     });
 }
-
-
-
-
-
 
 game.start();
