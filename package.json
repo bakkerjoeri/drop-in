@@ -17,6 +17,7 @@
 		"@bakkerjoeri/array-without": "^2.0.2",
 		"@bakkerjoeri/fp": "^1.0.0",
 		"@bakkerjoeri/repeat": "^1.0.0",
+		"heks": "^2.2.2",
 		"roll-the-bones": "^1.0.1"
 	},
 	"devDependencies": {
