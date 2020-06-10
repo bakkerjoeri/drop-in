@@ -2,6 +2,28 @@ import { SpriteSheet } from "heks"
 
 const spriteSheet: SpriteSheet = [
     {
+        name: 'arrow-left',
+        frames: [
+            {
+                file: 'src/assets/sprites/arrows.png',
+                origin: { x: 0, y: 0},
+                size: {width: 8, height: 8 },
+            }
+        ],
+        offset: {x: 0, y: 0},
+    },
+    {
+        name: 'arrow-right',
+        frames: [
+            {
+                file: 'src/assets/sprites/arrows.png',
+                origin: { x: 8, y: 0},
+                size: {width: 8, height: 8 },
+            }
+        ],
+        offset: {x: 0, y: 0},
+    },
+    {
         name: 'coin-red',
         frames: [
             {

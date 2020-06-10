@@ -1,7 +1,6 @@
 import {
-    Game, Size, EventEmitter, addEntity, GameState, findEntity, getEntities, setEntities, importSpriteSheet, drawSprite, getSprite, defaultState, DrawEvent
+    Game, Size, Position, EventEmitter, GameState, importSpriteSheet, drawSprite, getSprite, defaultState, DrawEvent
 } from 'heks';
-import { pipe } from '@bakkerjoeri/fp';
 import { createGameBoard, GameBoard, TileMap } from './gameboard';
 import { DropInEvents } from './events';
 import Keyboard from './keyboard';
@@ -10,19 +9,28 @@ import { choose } from 'roll-the-bones';
 import pick from './utilities/pick';
 
 export type Player = 'red' | 'blue' | 'yellow' | 'green' | 'purple' | 'white' | 'black';
+type GamePhase = 'settingUpGame' | 'playingRound';
+type RoundPhase = 'start' | 'startTurn' | 'decideMove' | 'endTurn' | 'end';
+type SetupSteps = 'boardHeight' | 'boardWidth' | 'amountOfPlayers' | 'connectToWin' | 'startRound';
 
 interface State extends GameState {
     game: {
-        phase: 'settingUpGame' | 'playingRound';
+        isPhaseNew: boolean;
+        phase: GamePhase | null;
+        nextPhase: GamePhase | null;
     };
     setup: {
         boardWidth: number;
         boardHeight: number;
         amountOfPlayers: number;
         connectToWin: number;
+        currentlySelectedStep: SetupSteps;
     },
     round: {
-        phase: 'start' | 'startTurn' | 'decideMove' | 'endTurn' | 'end';
+        isPhaseNew: boolean;
+        phase: RoundPhase | null;
+        nextPhase: RoundPhase | null;
+        gameBoard: GameBoard | null;
         boardSize: Size;
         positionToPlacePiece: number;
         connectToWin: number;
@@ -42,42 +50,66 @@ const tileSize = {
     height: 16,
 };
 
-/**
- * Game parameters
- */
-const boardSize = {
+const defaultBoardSize = {
     width: 8,
     height: 6,
 };
 
-const boardOrigin = {
-    x: (gameSize.width / 2) - ((boardSize.width / 2) * tileSize.width),
-    y: 40,
-};
+const defaultConnectToWin = 4;
 
-const connectToWin = 4;
-const amountOfPlayers = 2;
+const setupSteps: SetupSteps[] = [
+    'boardHeight',
+    'boardWidth',
+    'amountOfPlayers',
+    'connectToWin',
+    'startRound',
+]
+
+const allPlayers: Player[] = [
+    'red',
+    'blue',
+    'yellow',
+    'green',
+    'purple',
+    'white',
+    'black',
+];
+
+const boardHeightMin = 4;
+const boardHeightMax = 8;
+const boardWidthMin = 2;
+const boardWidthMax = 18;
+const amountOfPlayersMin = 2;
+const amountOfPlayersMax = 7;
+const connectToWinMin = 3;
+const connectToWinMax = 8;
 
 const eventEmitter = new EventEmitter<DropInEvents>();
 const game = new Game<State>(gameSize, eventEmitter, {
     initialState: {
         ...defaultState,
         game: {
-            phase: 'playingRound',
+            isPhaseNew: true,
+            phase: null,
+            nextPhase: 'settingUpGame',
         },
         setup: {
-            boardWidth: 7,
-            boardHeight: 6,
+            boardWidth: defaultBoardSize.width,
+            boardHeight: defaultBoardSize.height,
             amountOfPlayers: 2,
             connectToWin: 4,
+            currentlySelectedStep: setupSteps[0],
         },
         round: {
-            phase: 'start',
-            boardSize: boardSize,
-            connectToWin,
-            players: pick(['red', 'blue', 'yellow', 'green', 'purple', 'white', 'black'], amountOfPlayers),
+            isPhaseNew: true,
+            phase: null,
+            nextPhase: 'start',
+            gameBoard: null,
+            boardSize: defaultBoardSize,
+            connectToWin: defaultConnectToWin,
+            players: [],
             currentPlayer: null,
-            positionToPlacePiece: Math.floor((boardSize.width - 1) / 2),
+            positionToPlacePiece: 0,
             winner: null,
         },
 
@@ -87,10 +119,27 @@ const game = new Game<State>(gameSize, eventEmitter, {
 new Keyboard(eventEmitter);
 
 eventEmitter.on('start', (state: State): State => {
-    return pipe(
-        importSpriteSheet(spriteSheet),
-        addEntity(createGameBoard(state.round.boardSize.width, state.round.boardSize.height)),
-    )(state);
+    return importSpriteSheet(spriteSheet)(state);
+});
+
+eventEmitter.on('beforeUpdate', (state: State): State => {
+    if (state.game.nextPhase !== null) {
+        state.game.phase = state.game.nextPhase;
+        state.game.nextPhase = null;
+        state.game.isPhaseNew = true;
+    } else {
+        state.game.isPhaseNew = false;
+    }
+
+    if (state.round.nextPhase !== null) {
+        state.round.phase = state.round.nextPhase;
+        state.round.nextPhase = null;
+        state.round.isPhaseNew = true;
+    } else {
+        state.round.isPhaseNew = false;
+    }
+
+    return state;
 });
 
 eventEmitter.on('update', (state: State): State => {
@@ -106,6 +155,11 @@ eventEmitter.on('update', (state: State): State => {
 });
 
 function updateSetupGame(state: State): State {
+    if (state.game.isPhaseNew) {
+        state.setup.currentlySelectedStep = setupSteps[0];
+        return state;
+    }
+
     return state;
 }
 
@@ -126,20 +180,25 @@ function updatePlayingRound(state: State): State {
 }
 
 function updateRoundStart(state: State): State {
+    state.round.gameBoard = createGameBoard(
+        state.round.boardSize.width,
+        state.round.boardSize.height
+    );
     state.round.currentPlayer = choose(state.round.players);
-    state.round.phase = 'startTurn';
+    state.round.positionToPlacePiece = Math.floor((state.round.boardSize.width - 1) / 2);
+    state.round.nextPhase = 'startTurn';
 
     return state;
 }
 
 function updateRoundStartTurn(state: State): State {
-    state.round.phase = 'decideMove';
+    state.round.nextPhase = 'decideMove';
     
     return state;
 }
 
 function updateRoundEndTurn(state: State): State {
-    const gameBoard = findEntity(getEntities(state), { isGameBoard: true }) as GameBoard;
+    const gameBoard = state.round.gameBoard as GameBoard;
     const winner = findWinner(gameBoard.tiles, state.round.connectToWin);
 
     if (winner) {
@@ -148,14 +207,14 @@ function updateRoundEndTurn(state: State): State {
             round: {
                 ...state.round,
                 winner: winner,
-                phase: 'end',
+                nextPhase: 'end',
             },
         };
     }
 
     const currentPlayer = state.round.currentPlayer as Player;
     const currentPlayerIndex = state.round.players.indexOf(currentPlayer)
-    const nextPlayerIndex = (currentPlayerIndex + 1) % state.round.players.length;
+    const nextPlayerIndex = moveThroughLoop(currentPlayerIndex, state.round.players.length);
     const nextPlayer = state.round.players[nextPlayerIndex];
 
     return {
@@ -163,7 +222,7 @@ function updateRoundEndTurn(state: State): State {
         round: {
             ...state.round,
             currentPlayer: nextPlayer,
-            phase: 'startTurn',
+            nextPhase: 'startTurn',
         },
     }
 }
@@ -217,7 +276,7 @@ function findWinner(tiles: TileMap, chainLength = 4): Player | null {
 }
 
 eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
-    if (state.round.phase !== 'decideMove') {
+    if (state.game.phase !== 'playingRound' || state.round.phase !== 'decideMove') {
         return state;
     }
 
@@ -228,7 +287,7 @@ eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
         return state;
     }
 
-    const gameBoard = findEntity(getEntities(state), { isGameBoard: true }) as GameBoard;
+    const gameBoard = state.round.gameBoard as GameBoard;
     const columnIndex = keyAsInteger - 1;
     const column = gameBoard.tiles[columnIndex];
 
@@ -248,16 +307,16 @@ eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
     
     return {
         ...state,
-        ...setEntities(gameBoard)(state),
         round: {
             ...state.round,
-            phase: 'endTurn',
+            gameBoard,
+            nextPhase: 'endTurn',
         },
     };
 });
 
 eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
-    if (state.round.phase !== 'decideMove') {
+    if (state.game.phase !== 'playingRound' || state.round.phase !== 'decideMove') {
         return state;
     }
 
@@ -273,12 +332,12 @@ eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
 });
 
 eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
-    if (state.round.phase !== 'decideMove') {
+    if (state.game.phase !== 'playingRound' || state.round.phase !== 'decideMove') {
         return state;
     }
 
     if (key === 'arrowdown' || key === 's') {
-        const gameBoard = findEntity(getEntities(state), { isGameBoard: true }) as GameBoard;
+        const gameBoard = state.round.gameBoard as GameBoard;
         const columnIndex = state.round.positionToPlacePiece;
         const column = gameBoard.tiles[state.round.positionToPlacePiece];
 
@@ -298,16 +357,122 @@ eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
         
         return {
             ...state,
-            ...setEntities(gameBoard)(state),
             round: {
                 ...state.round,
-                phase: 'endTurn',
+                gameBoard,
+                nextPhase: 'endTurn',
             },
         };
     }
 
     return state;
 });
+
+eventEmitter.on('keyPressed', (state: State, { key }): State => {
+    if (state.game.phase !== 'settingUpGame') {
+        return state;
+    }
+
+    const currentlySelectedStepIndex = setupSteps.indexOf(state.setup.currentlySelectedStep);
+
+    if (key === 'arrowup' || key === 'w') {
+        const nextSelectedStepIndex = moveThroughLoop(currentlySelectedStepIndex, setupSteps.length, -1);
+        state.setup.currentlySelectedStep = setupSteps[nextSelectedStepIndex];
+    }
+
+    if (key === 'arrowright' || key === 'd') {
+        if (state.setup.currentlySelectedStep === 'amountOfPlayers') {
+            state.setup.amountOfPlayers = Math.min(amountOfPlayersMax, state.setup.amountOfPlayers + 1);
+        }
+
+        if (state.setup.currentlySelectedStep === 'boardWidth') {
+            state.setup.boardWidth = Math.min(boardWidthMax, state.setup.boardWidth + 1);
+        }
+
+        if (state.setup.currentlySelectedStep === 'boardHeight') {
+            state.setup.boardHeight = Math.min(boardHeightMax, state.setup.boardHeight + 1);
+        }
+
+        if (state.setup.currentlySelectedStep === 'connectToWin') {
+            state.setup.connectToWin = Math.min(connectToWinMax, state.setup.connectToWin + 1);
+        }
+    }
+
+    if (key === 'arrowdown' || key === 's') {
+        const nextSelectedStepIndex = moveThroughLoop(currentlySelectedStepIndex, setupSteps.length, 1);
+        state.setup.currentlySelectedStep = setupSteps[nextSelectedStepIndex];
+    }
+
+    if (key === 'arrowleft' || key === 'a') {
+        if (state.setup.currentlySelectedStep === 'amountOfPlayers') {
+            state.setup.amountOfPlayers = Math.max(amountOfPlayersMin, state.setup.amountOfPlayers - 1);
+        }
+
+        if (state.setup.currentlySelectedStep === 'boardWidth') {
+            state.setup.boardWidth = Math.max(boardWidthMin, state.setup.boardWidth - 1);
+        }
+
+        if (state.setup.currentlySelectedStep === 'boardHeight') {
+            state.setup.boardHeight = Math.max(boardHeightMin, state.setup.boardHeight - 1);
+        }
+
+        if (state.setup.currentlySelectedStep === 'connectToWin') {
+            state.setup.connectToWin = Math.max(connectToWinMin, state.setup.connectToWin - 1);
+        }
+    }
+
+    if (key === 'enter' && state.setup.currentlySelectedStep === 'startRound') {
+        state.game.nextPhase = 'playingRound';
+        state.round.nextPhase = 'start';
+        
+        state.round = {
+            ...state.round,
+            boardSize: {
+                width: state.setup.boardWidth,
+                height: state.setup.boardHeight,
+            },
+            players: pick(allPlayers, state.setup.amountOfPlayers),
+            connectToWin: state.setup.connectToWin,
+        }
+
+        return state;
+    }
+
+    return state;
+});
+
+eventEmitter.on('keyPressed', (state: State, { key }): State => {
+    if (state.game.phase !== 'playingRound' || state.round.phase !== 'end') {
+        return state;
+    }
+
+    if (key === 'r') {
+        state.round.nextPhase = 'start';
+        state.round = {
+            ...state.round,
+            boardSize: {
+                width: state.setup.boardWidth,
+                height: state.setup.boardHeight,
+            },
+            players: pick(allPlayers, state.setup.amountOfPlayers),
+            connectToWin: state.setup.connectToWin,
+        }
+
+        return state;
+    }
+
+    if (key === 'q') {
+        state.game.nextPhase = 'settingUpGame';
+
+        return state;
+    }
+
+    return state;
+});
+
+function moveThroughLoop(current: number, total: number, step: number = 1) {
+    return ((current + step) % total + total) % total;
+}
 
 eventEmitter.on('draw', (state: State, { context }): State => {
     context.clearRect(0, 0, gameSize.width, gameSize.height);
@@ -318,6 +483,10 @@ eventEmitter.on('draw', (state: State, { context }): State => {
 });
 
 eventEmitter.on('draw', (state: State, drawEvent: DrawEvent): State => {
+    if (state.game.phase === 'settingUpGame') {
+        drawSettingUpGame(state, drawEvent);
+    }
+
     if (state.game.phase === 'playingRound') {
         drawPlayingRound(state, drawEvent);
     }
@@ -325,8 +494,68 @@ eventEmitter.on('draw', (state: State, drawEvent: DrawEvent): State => {
     return state;
 });
 
+function drawSettingUpGame(state: State, { context }: DrawEvent): void {
+    drawText('Set up a new game', { x: (gameSize.width / 2) + 0.5, y: 28 }, context, 'center');
+    drawText('Board', { x: 150, y: 68 }, context, 'right');
+    drawText(`${state.setup.boardHeight} rows`, { x: 172, y: 68 }, context);
+    
+    if (state.setup.currentlySelectedStep === 'boardHeight') {
+        if (state.setup.boardHeight > boardHeightMin) {
+            drawSprite(getSprite(state, 'arrow-left'), context, { x: 160, y: 68 });
+        }
+
+        if (state.setup.boardHeight < boardHeightMax) {
+            drawSprite(getSprite(state, 'arrow-right'), context, { x: 230, y: 68 });
+        }
+    }
+
+    drawText(`${state.setup.boardWidth} columns`, { x: 172, y: 78 }, context);
+
+    if (state.setup.currentlySelectedStep === 'boardWidth') {
+        if (state.setup.boardWidth > boardWidthMin) {
+            drawSprite(getSprite(state, 'arrow-left'), context, { x: 160, y: 78 });
+        }
+
+        if (state.setup.boardWidth < boardWidthMax) {
+            drawSprite(getSprite(state, 'arrow-right'), context, { x: 230, y: 78 });
+        }
+    }
+
+    drawText('Who\'s playing?', { x: 150, y: 98 }, context, 'right');
+    drawText(`${state.setup.amountOfPlayers} players`, { x: 172, y: 98 }, context);
+
+    if (state.setup.currentlySelectedStep === 'amountOfPlayers') {
+        if (state.setup.amountOfPlayers > amountOfPlayersMin) {
+            drawSprite(getSprite(state, 'arrow-left'), context, { x: 160, y: 98 });
+        }
+
+        if (state.setup.amountOfPlayers < amountOfPlayersMax) {
+            drawSprite(getSprite(state, 'arrow-right'), context, { x: 230, y: 98 });
+        }
+    }
+
+    drawText('How many to win?', { x: 150, y: 118 }, context, 'right');
+    drawText(`connect ${state.setup.connectToWin}`, { x: 172, y: 118 }, context);
+
+    if (state.setup.currentlySelectedStep === 'connectToWin') {
+        if (state.setup.connectToWin > connectToWinMin) {
+            drawSprite(getSprite(state, 'arrow-left'), context, { x: 160, y: 118 });
+        }
+
+        if (state.setup.connectToWin < connectToWinMax) {
+            drawSprite(getSprite(state, 'arrow-right'), context, { x: 230, y: 118 });
+        }
+    }
+
+    drawText('start', { x: 172, y: 138 }, context);
+
+    if (state.setup.currentlySelectedStep === 'startRound') {
+        drawSprite(getSprite(state, 'arrow-right'), context, { x: 160, y: 138 });
+    }
+}
+
 function drawPlayingRound(state: State, drawEvent: DrawEvent): void {
-    const gameBoard = findEntity(getEntities(state), { isGameBoard: true }) as GameBoard;
+    const gameBoard = state.round.gameBoard as GameBoard;
 
     drawBoardBack(gameBoard, drawEvent.context, state);
     drawCoinsInBoard(gameBoard, drawEvent.context, state);
@@ -342,6 +571,8 @@ function drawPlayingRound(state: State, drawEvent: DrawEvent): void {
 }
 
 function drawRoundDecidingMove(state: State, { context }: DrawEvent): void {
+    const boardOrigin = getBoardOrigin(state.round.boardSize);
+
     drawSprite(
         getSprite(state, `coin-${state.round.currentPlayer}`),
         context,
@@ -357,16 +588,18 @@ function drawRoundEnd(state: State, { context }: DrawEvent): void {
         getSprite(state, `coin-${state.round.winner}`),
         context,
         {
-            x: (gameSize.width / 2) - (tileSize.width / 2),
+            x: (gameSize.width / 2) - (tileSize.width / 2) - 12,
             y: 4
         }
     );
-    context.fillStyle = '#000000';
-    context.font = '10px BirdSeed-Regular';
-    context.fillText('wins!', (gameSize.width / 2) - 12, 28);
+
+    drawText('wins!', { x: (gameSize.width / 2) - 2, y: 8 }, context);
+    drawText('q: set up new game | r: rematch', { x: (gameSize.width / 2) + 0.5, y: 24 }, context, 'center');
 }
 
 function drawCoinsInBoard(gameBoard: GameBoard, context: CanvasRenderingContext2D, state: State) {
+    const boardOrigin = getBoardOrigin(state.round.boardSize);
+
     gameBoard.tiles.forEach((row, rowIndex) => {
         row.forEach((cell, columnIndex) => {
             const coinOrigin = {
@@ -386,6 +619,8 @@ function drawCoinsInBoard(gameBoard: GameBoard, context: CanvasRenderingContext2
 }
 
 function drawBoardBack(gameBoard: GameBoard, context: CanvasRenderingContext2D, state: State) {
+    const boardOrigin = getBoardOrigin(state.round.boardSize);
+
     gameBoard.tiles.forEach((row, rowIndex) => {
         row.forEach((cell, columnIndex) => {
             const cellOrigin = {
@@ -467,6 +702,8 @@ function drawBoardBack(gameBoard: GameBoard, context: CanvasRenderingContext2D, 
 }
 
 function drawBoardFront(gameBoard: GameBoard, context: CanvasRenderingContext2D, state: State) {
+    const boardOrigin = getBoardOrigin(state.round.boardSize);
+
     gameBoard.tiles.forEach((row, rowIndex) => {
         row.forEach((cell, columnIndex) => {
             const cellOrigin = {
@@ -505,6 +742,27 @@ function drawBoardFront(gameBoard: GameBoard, context: CanvasRenderingContext2D,
             }
         });
     });
+}
+
+function getBoardOrigin(boardSize: Size): Position {
+    return {
+        x: (gameSize.width / 2) - ((boardSize.width / 2) * tileSize.width),
+        y: 40,
+    };
+}
+
+function drawText(
+    string: string,
+    position: Position,
+    context: CanvasRenderingContext2D,
+    align: CanvasTextAlign = 'left',
+    color: string = '#000000',
+) {
+    context.textAlign = align;
+    context.textBaseline = 'top';
+    context.fillStyle = color;
+    context.font = '10px BirdSeed-Regular';
+    context.fillText(string, position.x, position.y);
 }
 
 game.start();
