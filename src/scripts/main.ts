@@ -216,6 +216,99 @@ function findWinner(tiles: TileMap, chainLength = 4): Player | null {
     return null;
 }
 
+eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
+    if (state.round.phase !== 'decideMove') {
+        return state;
+    }
+
+    const keyAsInteger = parseInt(key);
+    const isNumericKey = typeof keyAsInteger === 'number' && !isNaN(keyAsInteger);
+
+    if (!isNumericKey || !(keyAsInteger >= 1 && keyAsInteger <= state.round.boardSize.width)) {
+        return state;
+    }
+
+    const gameBoard = findEntity(getEntities(state), { isGameBoard: true }) as GameBoard;
+    const columnIndex = keyAsInteger - 1;
+    const column = gameBoard.tiles[columnIndex];
+
+    // The cell that will receive the tile is the one before the first filled cell
+    let indexOfFirstFullCell = 0;
+    let cellToInspect = column[indexOfFirstFullCell];
+    while(cellToInspect === null && indexOfFirstFullCell <= column.length - 1) {
+        indexOfFirstFullCell += 1;
+        cellToInspect = column[indexOfFirstFullCell];
+    }
+
+    if (indexOfFirstFullCell === 0) {
+        return state;
+    }
+    
+    gameBoard.tiles[columnIndex][indexOfFirstFullCell - 1] = state.round.currentPlayer;
+    
+    return {
+        ...state,
+        ...setEntities(gameBoard)(state),
+        round: {
+            ...state.round,
+            phase: 'endTurn',
+        },
+    };
+});
+
+eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
+    if (state.round.phase !== 'decideMove') {
+        return state;
+    }
+
+    if (key === 'arrowright' || key === 'd') {
+        state.round.positionToPlacePiece = Math.min(state.round.boardSize.width - 1, state.round.positionToPlacePiece + 1);
+    }
+
+    if (key === 'arrowleft' || key === 'a') {
+        state.round.positionToPlacePiece = Math.max(0, state.round.positionToPlacePiece - 1);
+    }
+
+    return state;
+});
+
+eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
+    if (state.round.phase !== 'decideMove') {
+        return state;
+    }
+
+    if (key === 'arrowdown' || key === 's') {
+        const gameBoard = findEntity(getEntities(state), { isGameBoard: true }) as GameBoard;
+        const columnIndex = state.round.positionToPlacePiece;
+        const column = gameBoard.tiles[state.round.positionToPlacePiece];
+
+        // The cell that will receive the tile is the one before the first filled cell
+        let indexOfFirstFullCell = 0;
+        let cellToInspect = column[indexOfFirstFullCell];
+        while(cellToInspect === null && indexOfFirstFullCell <= column.length - 1) {
+            indexOfFirstFullCell += 1;
+            cellToInspect = column[indexOfFirstFullCell];
+        }
+
+        if (indexOfFirstFullCell === 0) {
+            return state;
+        }
+        
+        gameBoard.tiles[columnIndex][indexOfFirstFullCell - 1] = state.round.currentPlayer;
+        
+        return {
+            ...state,
+            ...setEntities(gameBoard)(state),
+            round: {
+                ...state.round,
+                phase: 'endTurn',
+            },
+        };
+    }
+
+    return state;
+});
+
 eventEmitter.on('draw', (state: State, { context }): State => {
     context.clearRect(0, 0, gameSize.width, gameSize.height);
     context.fillStyle = '#D7D0FF';
