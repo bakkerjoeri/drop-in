@@ -1,5 +1,5 @@
 import {
-    Game, Size, EventEmitter, addEntity, GameState, findEntity, getEntities, setEntities, importSpriteSheet, drawSprite, getSprite, defaultState
+    Game, Size, EventEmitter, addEntity, GameState, findEntity, getEntities, setEntities, importSpriteSheet, drawSprite, getSprite, defaultState, DrawEvent
 } from 'heks';
 import { pipe } from '@bakkerjoeri/fp';
 import { createGameBoard, GameBoard, TileMap } from './gameboard';
@@ -12,6 +12,15 @@ import pick from './utilities/pick';
 export type Player = 'red' | 'blue' | 'yellow' | 'green' | 'purple' | 'white' | 'black';
 
 interface State extends GameState {
+    game: {
+        phase: 'settingUpGame' | 'playingRound';
+    };
+    setup: {
+        boardWidth: number;
+        boardHeight: number;
+        amountOfPlayers: number;
+        connectToWin: number;
+    },
     round: {
         phase: 'start' | 'startTurn' | 'decideMove' | 'endTurn' | 'end';
         boardSize: Size;
@@ -53,6 +62,15 @@ const eventEmitter = new EventEmitter<DropInEvents>();
 const game = new Game<State>(gameSize, eventEmitter, {
     initialState: {
         ...defaultState,
+        game: {
+            phase: 'playingRound',
+        },
+        setup: {
+            boardWidth: 7,
+            boardHeight: 6,
+            amountOfPlayers: 2,
+            connectToWin: 4,
+        },
         round: {
             phase: 'start',
             boardSize: boardSize,
@@ -62,6 +80,7 @@ const game = new Game<State>(gameSize, eventEmitter, {
             positionToPlacePiece: Math.floor((boardSize.width - 1) / 2),
             winner: null,
         },
+
     },
     containerSelector: '.game',
 });
@@ -75,151 +94,79 @@ eventEmitter.on('start', (state: State): State => {
 });
 
 eventEmitter.on('update', (state: State): State => {
+    if (state.game.phase === 'settingUpGame') {
+        return updateSetupGame(state);
+    }
+
+    if (state.game.phase === 'playingRound') {
+        return updatePlayingRound(state);
+    }
+
+    return state;
+});
+
+function updateSetupGame(state: State): State {
+    return state;
+}
+
+function updatePlayingRound(state: State): State {
     if (state.round.phase === 'start') {
-        state.round.currentPlayer = choose(state.round.players);
-        state.round.phase = 'startTurn';
+        return updateRoundStart(state);
     }
 
-    return state;
-});
-
-eventEmitter.on('update', (state: State): State => {
     if (state.round.phase === 'startTurn') {
-        // state.round.positionToPlacePiece = Math.floor((state.round.boardSize.width - 1) / 2);
-        state.round.phase = 'decideMove';
-
-        // console.log(state);
+        return updateRoundStartTurn(state);
     }
 
-    return state;
-});
-
-eventEmitter.on('update', (state: State): State => {
     if (state.round.phase === 'endTurn') {
-        const gameBoard = findEntity(getEntities(state), { isGameBoard: true }) as GameBoard;
-        const winner = findWinner(gameBoard.tiles, state.round.connectToWin);
-
-        if (winner) {
-            return {
-                ...state,
-                round: {
-                    ...state.round,
-                    winner: winner,
-                    phase: 'end',
-                },
-            };
-        }
-
-        const currentPlayer = state.round.currentPlayer as Player;
-        const currentPlayerIndex = state.round.players.indexOf(currentPlayer)
-        const nextPlayerIndex = (currentPlayerIndex + 1) % state.round.players.length;
-        const nextPlayer = state.round.players[nextPlayerIndex];
-
-        return {
-            ...state,
-            round: {
-                ...state.round,
-                currentPlayer: nextPlayer,
-                phase: 'startTurn',
-            },
-        }
+        return updateRoundEndTurn(state);
     }
 
     return state;
-});
+}
 
-eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
-    if (state.round.phase !== 'decideMove') {
-        return state;
-    }
+function updateRoundStart(state: State): State {
+    state.round.currentPlayer = choose(state.round.players);
+    state.round.phase = 'startTurn';
 
-    const keyAsInteger = parseInt(key);
-    const isNumericKey = typeof keyAsInteger === 'number' && !isNaN(keyAsInteger);
+    return state;
+}
 
-    if (!isNumericKey || !(keyAsInteger >= 1 && keyAsInteger <= state.round.boardSize.width)) {
-        return state;
-    }
+function updateRoundStartTurn(state: State): State {
+    state.round.phase = 'decideMove';
+    
+    return state;
+}
 
+function updateRoundEndTurn(state: State): State {
     const gameBoard = findEntity(getEntities(state), { isGameBoard: true }) as GameBoard;
-    const columnIndex = keyAsInteger - 1;
-    const column = gameBoard.tiles[columnIndex];
+    const winner = findWinner(gameBoard.tiles, state.round.connectToWin);
 
-    // The cell that will receive the tile is the one before the first filled cell
-    let indexOfFirstFullCell = 0;
-    let cellToInspect = column[indexOfFirstFullCell];
-    while(cellToInspect === null && indexOfFirstFullCell <= column.length - 1) {
-        indexOfFirstFullCell += 1;
-        cellToInspect = column[indexOfFirstFullCell];
-    }
-
-    if (indexOfFirstFullCell === 0) {
-        return state;
-    }
-    
-    gameBoard.tiles[columnIndex][indexOfFirstFullCell - 1] = state.round.currentPlayer;
-    
-    return {
-        ...state,
-        ...setEntities(gameBoard)(state),
-        round: {
-            ...state.round,
-            phase: 'endTurn',
-        },
-    };
-});
-
-eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
-    if (state.round.phase !== 'decideMove') {
-        return state;
-    }
-
-    if (key === 'arrowright' || key === 'd') {
-        state.round.positionToPlacePiece = Math.min(state.round.boardSize.width - 1, state.round.positionToPlacePiece + 1);
-    }
-
-    if (key === 'arrowleft' || key === 'a') {
-        state.round.positionToPlacePiece = Math.max(0, state.round.positionToPlacePiece - 1);
-    }
-
-    return state;
-});
-
-eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
-    if (state.round.phase !== 'decideMove') {
-        return state;
-    }
-
-    if (key === 'arrowdown' || key === 's') {
-        const gameBoard = findEntity(getEntities(state), { isGameBoard: true }) as GameBoard;
-        const columnIndex = state.round.positionToPlacePiece;
-        const column = gameBoard.tiles[state.round.positionToPlacePiece];
-
-        // The cell that will receive the tile is the one before the first filled cell
-        let indexOfFirstFullCell = 0;
-        let cellToInspect = column[indexOfFirstFullCell];
-        while(cellToInspect === null && indexOfFirstFullCell <= column.length - 1) {
-            indexOfFirstFullCell += 1;
-            cellToInspect = column[indexOfFirstFullCell];
-        }
-
-        if (indexOfFirstFullCell === 0) {
-            return state;
-        }
-        
-        gameBoard.tiles[columnIndex][indexOfFirstFullCell - 1] = state.round.currentPlayer;
-        
+    if (winner) {
         return {
             ...state,
-            ...setEntities(gameBoard)(state),
             round: {
                 ...state.round,
-                phase: 'endTurn',
+                winner: winner,
+                phase: 'end',
             },
         };
     }
 
-    return state;
-});
+    const currentPlayer = state.round.currentPlayer as Player;
+    const currentPlayerIndex = state.round.players.indexOf(currentPlayer)
+    const nextPlayerIndex = (currentPlayerIndex + 1) % state.round.players.length;
+    const nextPlayer = state.round.players[nextPlayerIndex];
+
+    return {
+        ...state,
+        round: {
+            ...state.round,
+            currentPlayer: nextPlayer,
+            phase: 'startTurn',
+        },
+    }
+}
 
 function findWinner(tiles: TileMap, chainLength = 4): Player | null {
     for (let columnIndex = 0; columnIndex < tiles.length; columnIndex += 1) { // iterate columns, left to right
@@ -277,44 +224,54 @@ eventEmitter.on('draw', (state: State, { context }): State => {
     return state;
 });
 
-eventEmitter.on('draw', (state: State, { context }): State => {
+eventEmitter.on('draw', (state: State, drawEvent: DrawEvent): State => {
+    if (state.game.phase === 'playingRound') {
+        drawPlayingRound(state, drawEvent);
+    }
+
+    return state;
+});
+
+function drawPlayingRound(state: State, drawEvent: DrawEvent): void {
     const gameBoard = findEntity(getEntities(state), { isGameBoard: true }) as GameBoard;
 
-    drawBoardBack(gameBoard, context, state);
-    drawCoinsInBoard(gameBoard, context, state);
-    drawBoardFront(gameBoard, context, state);
+    drawBoardBack(gameBoard, drawEvent.context, state);
+    drawCoinsInBoard(gameBoard, drawEvent.context, state);
+    drawBoardFront(gameBoard, drawEvent.context, state);
+
+    if (state.round.phase === 'decideMove') {
+        drawRoundDecidingMove(state, drawEvent);
+    }
 
     if (state.round.phase === 'end' && state.round.winner) {
-        drawSprite(
-            getSprite(state, `coin-${state.round.currentPlayer}`),
-            context,
-            {
-                x: (gameSize.width / 2) - (tileSize.width / 2),
-                y: 4
-            }
-        );
-        context.fillStyle = '#000000';
-        context.font = '10px BirdSeed-Regular';
-        context.fillText('wins!', (gameSize.width / 2) - 12, 28);
+        drawRoundEnd(state, drawEvent);
     }
+}
 
-    return state;
-});
+function drawRoundDecidingMove(state: State, { context }: DrawEvent): void {
+    drawSprite(
+        getSprite(state, `coin-${state.round.currentPlayer}`),
+        context,
+        {
+            x: boardOrigin.x + (state.round.positionToPlacePiece * tileSize.width),
+            y: boardOrigin.y - Math.floor(1.5 * tileSize.height),
+        }
+    );
+}
 
-eventEmitter.on('draw', (state: State, { context }): State => {
-    if (state.round.phase === 'decideMove') {
-        drawSprite(
-            getSprite(state, `coin-${state.round.currentPlayer}`),
-            context,
-            {
-                x: boardOrigin.x + (state.round.positionToPlacePiece * tileSize.width),
-                y: boardOrigin.y - Math.floor(1.5 * tileSize.height),
-            }
-        );
-    }
-
-    return state;
-});
+function drawRoundEnd(state: State, { context }: DrawEvent): void {
+    drawSprite(
+        getSprite(state, `coin-${state.round.winner}`),
+        context,
+        {
+            x: (gameSize.width / 2) - (tileSize.width / 2),
+            y: 4
+        }
+    );
+    context.fillStyle = '#000000';
+    context.font = '10px BirdSeed-Regular';
+    context.fillText('wins!', (gameSize.width / 2) - 12, 28);
+}
 
 function drawCoinsInBoard(gameBoard: GameBoard, context: CanvasRenderingContext2D, state: State) {
     gameBoard.tiles.forEach((row, rowIndex) => {
