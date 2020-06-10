@@ -2,3 +2,21 @@
     font-family: 'BirdSeed-Regular';
     src: url('/src/assets/fonts/BirdSeed-Regular.ttf') format('truetype');
 }
+
+* {
+    margin: 0;
+    padding: 0;
+}
+
+html,
+body {
+    height: 100%;
+}
+
+body {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background-color: #D7D0FF;
+}
