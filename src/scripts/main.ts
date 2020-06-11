@@ -448,15 +448,6 @@ eventEmitter.on('keyPressed', (state: State, { key }): State => {
 
     if (key === 'r') {
         state.round.nextPhase = 'start';
-        state.round = {
-            ...state.round,
-            boardSize: {
-                width: state.setup.boardWidth,
-                height: state.setup.boardHeight,
-            },
-            players: pick(allPlayers, state.setup.amountOfPlayers),
-            connectToWin: state.setup.connectToWin,
-        }
 
         return state;
     }
