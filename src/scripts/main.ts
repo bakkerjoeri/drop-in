@@ -1,5 +1,5 @@
 import {
-    Game, Size, Position, EventEmitter, GameState, importSpriteSheet, drawSprite, getSprite, defaultState, DrawEvent
+    Game, Size, Position, EventEmitter, GameState, importSpriteSheet, drawSprite, getSprite, defaultState, DrawEvent, UpdateEvent
 } from 'heks';
 import { createGameBoard, GameBoard, TileMap } from './gameboard';
 import { DropInEvents } from './events';
@@ -37,6 +37,10 @@ interface State extends GameState {
         players: Player[];
         currentPlayer: Player | null;
         winner: Player | null;
+        time: Array<{
+            player: Player;
+            timeLeft: number;
+        }>;
     };
 }
 
@@ -56,6 +60,8 @@ const defaultBoardSize = {
 };
 
 const defaultConnectToWin = 4;
+
+const totalTime = 60;
 
 const setupSteps: SetupSteps[] = [
     'boardHeight',
@@ -111,6 +117,7 @@ const game = new Game<State>(gameSize, eventEmitter, {
             currentPlayer: null,
             positionToPlacePiece: 0,
             winner: null,
+            time: [],
         },
 
     },
@@ -142,13 +149,13 @@ eventEmitter.on('beforeUpdate', (state: State): State => {
     return state;
 });
 
-eventEmitter.on('update', (state: State): State => {
+eventEmitter.on('update', (state: State, event: UpdateEvent): State => {
     if (state.game.phase === 'settingUpGame') {
         return updateSetupGame(state);
     }
 
     if (state.game.phase === 'playingRound') {
-        return updatePlayingRound(state);
+        return updatePlayingRound(state, event);
     }
 
     return state;
@@ -163,13 +170,17 @@ function updateSetupGame(state: State): State {
     return state;
 }
 
-function updatePlayingRound(state: State): State {
+function updatePlayingRound(state: State, event: UpdateEvent): State {
     if (state.round.phase === 'start') {
         return updateRoundStart(state);
     }
 
     if (state.round.phase === 'startTurn') {
         return updateRoundStartTurn(state);
+    }
+
+    if (state.round.phase === 'decideMove') {
+        return updateRoundDecideMove(state, event);
     }
 
     if (state.round.phase === 'endTurn') {
@@ -187,6 +198,12 @@ function updateRoundStart(state: State): State {
     state.round.currentPlayer = choose(state.round.players);
     state.round.positionToPlacePiece = Math.floor((state.round.boardSize.width - 1) / 2);
     state.round.nextPhase = 'startTurn';
+    state.round.time = state.round.players.map((player) => {
+        return {
+            player: player,
+            timeLeft: totalTime,
+        }
+    });
 
     return state;
 }
@@ -194,6 +211,10 @@ function updateRoundStart(state: State): State {
 function updateRoundStartTurn(state: State): State {
     state.round.nextPhase = 'decideMove';
     
+    return state;
+}
+
+function updateRoundDecideMove(state: State, { time }: UpdateEvent): State {
     return state;
 }
 
