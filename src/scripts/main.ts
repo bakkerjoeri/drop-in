@@ -5,8 +5,7 @@ import { createGameBoard, GameBoard, TileMap } from './gameboard';
 import { DropInEvents } from './events';
 import Keyboard from './keyboard';
 import spriteSheet from '../assets/sprites/sprites';
-import { choose } from 'roll-the-bones';
-import pick from './utilities/pick';
+import { choose, pick } from 'roll-the-bones';
 
 export type Player = 'red' | 'blue' | 'yellow' | 'green' | 'purple' | 'white' | 'black';
 type GamePhase = 'settingUpGame' | 'playingRound';

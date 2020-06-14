@@ -18,7 +18,7 @@
 		"@bakkerjoeri/fp": "^1.0.0",
 		"@bakkerjoeri/repeat": "^1.0.0",
 		"heks": "^2.3.0",
-		"roll-the-bones": "^1.0.1"
+		"roll-the-bones": "^1.1.0"
 	},
 	"devDependencies": {
 		"ts-loader": "^7.0.5",
