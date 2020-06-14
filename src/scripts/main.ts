@@ -211,6 +211,16 @@ function updateRoundEndTurn(state: State): State {
         };
     }
 
+    if (isGameBoardFull(gameBoard.tiles)) {
+        return {
+            ...state,
+            round: {
+                ...state.round,
+                nextPhase: 'end',
+            },
+        };
+    }
+
     const currentPlayer = state.round.currentPlayer as Player;
     const currentPlayerIndex = state.round.players.indexOf(currentPlayer)
     const nextPlayerIndex = moveThroughLoop(currentPlayerIndex, state.round.players.length);
@@ -272,6 +282,12 @@ function findWinner(tiles: TileMap, chainLength = 4): Player | null {
     }
 
     return null;
+}
+
+function isGameBoardFull(tiles: TileMap): boolean {
+    return tiles.every(column => {
+        return column.every(cell => cell !== null);
+    });
 }
 
 eventEmitter.on('keyPressed', (state: State, { key }, { emit }): State => {
@@ -555,7 +571,7 @@ function drawPlayingRound(state: State, drawEvent: DrawEvent): void {
         drawRoundDecidingMove(state, drawEvent);
     }
 
-    if (state.round.phase === 'end' && state.round.winner) {
+    if (state.round.phase === 'end') {
         drawRoundEnd(state, drawEvent);
     }
 }
@@ -574,16 +590,21 @@ function drawRoundDecidingMove(state: State, { context }: DrawEvent): void {
 }
 
 function drawRoundEnd(state: State, { context }: DrawEvent): void {
-    drawSprite(
-        getSprite(state, `coin-${state.round.winner}`),
-        context,
-        {
-            x: (gameSize.width / 2) - (tileSize.width / 2) - 12,
-            y: 4
-        }
-    );
+    if (state.round.winner) {
+        drawSprite(
+            getSprite(state, `coin-${state.round.winner}`),
+            context,
+            {
+                x: (gameSize.width / 2) - (tileSize.width / 2) - 12,
+                y: 4
+            }
+        );
 
-    drawText('wins!', { x: (gameSize.width / 2) - 2, y: 8 }, context);
+        drawText('wins!', { x: (gameSize.width / 2) - 2, y: 8 }, context);
+    } else {
+        drawText('tie...', { x: (gameSize.width / 2) + 0.5, y: 8 }, context, 'center');
+    }
+    
     drawText('q: set up new game | r: rematch', { x: (gameSize.width / 2) + 0.5, y: 24 }, context, 'center');
 }
 
