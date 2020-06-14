@@ -1,6 +1,6 @@
-import { SpriteSheet } from "heks"
+import { Sprite } from "heks"
 
-const spriteSheet: SpriteSheet = [
+const spriteSheet: Sprite[] = [
     {
         name: 'arrow-left',
         frames: [

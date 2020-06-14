@@ -1,5 +1,5 @@
 import {
-    Game, Size, Position, EventEmitter, GameState, importSpriteSheet, drawSprite, getSprite, defaultState, DrawEvent
+    Game, Size, Position, EventEmitter, GameState, setSprites, drawSprite, getSprite, defaultState, DrawEvent
 } from 'heks';
 import { createGameBoard, GameBoard, TileMap } from './gameboard';
 import { DropInEvents } from './events';
@@ -118,7 +118,7 @@ const game = new Game<State>(gameSize, eventEmitter, {
 new Keyboard(eventEmitter);
 
 eventEmitter.on('start', (state: State): State => {
-    return importSpriteSheet(spriteSheet)(state);
+    return setSprites(spriteSheet)(state);
 });
 
 eventEmitter.on('beforeUpdate', (state: State): State => {
