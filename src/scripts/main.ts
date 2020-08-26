@@ -769,17 +769,12 @@ function drawText(
     position: Position,
     context: CanvasRenderingContext2D,
     align: CanvasTextAlign = 'left',
-    color: string = '#000000',
+    color?: string,
 ) {
-    // context.textAlign = align;
-    // context.textBaseline = 'top';
-    // context.fillStyle = color;
-    // context.font = '10px BirdSeed-Regular';
-    // context.fillText(string, position.x, position.y);
-
     drawTextWithCustomFont(context, text, position, '/src/assets/fonts/BirdSeed/atlas.png', metrics, {
         align,
         baseline: 'top',
+        color,
     });
 }
 

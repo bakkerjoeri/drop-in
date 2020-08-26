@@ -37,13 +37,13 @@ export function drawTextWithCustomFont(
 	fontAtlasPath: string,
 	metrics: FontMetrics,
 	{
-		color = 'black',
+		color = '#000000',
 		align = 'start',
 		baseline = 'alphabetic',
 		direction = 'ltr',
 	}: DrawTextOptions = {}
 ): void {
-	const fontImage = getImageForFilePath(fontAtlasPath);
+	const fontImage = getFontWithColor(fontAtlasPath, color);
 	const lineHeight = metrics.size;
 	const lines = makeRenderLines(text, metrics, direction, baseline);
 	const biggestWidth = Math.max(...lines.map(line => line.width));
@@ -67,6 +67,40 @@ export function drawTextWithCustomFont(
 		});
     });
 }
+
+const fontColorCache: {
+	[path: string]: {
+		[color: string]: HTMLCanvasElement;
+	};
+} = {};
+
+function getFontWithColor(fontAtlasPath: string, color: string): HTMLCanvasElement {
+	if (!fontColorCache.hasOwnProperty(fontAtlasPath)) {
+		fontColorCache[fontAtlasPath] = {};
+	}
+
+	if (!fontColorCache[fontAtlasPath].hasOwnProperty(color)) {
+		fontColorCache[fontAtlasPath][color] = document.createElement('canvas');
+
+		const canvas = fontColorCache[fontAtlasPath][color];
+		const context = canvas.getContext('2d');
+
+		if (!context) {
+			throw new Error('Could not create context for font canvas. Perhaps this browser does not support the Canvas API.');
+		}
+
+		const fontImage = getImageForFilePath(fontAtlasPath);
+
+		fontImage.addEventListener('load', () => {
+			context.drawImage(fontImage, 0, 0);
+			context.globalCompositeOperation = 'source-in';
+			context.fillStyle = color;
+			context.fillRect(0, 0, canvas.width, canvas.height);
+		});
+	}
+
+	return fontColorCache[fontAtlasPath][color];
+};
 
 interface Line {
 	width: number;
@@ -103,8 +137,7 @@ interface Line {
  * align === 'right'
  * align === 'start' && direction === 'rtl'
  * align === 'end' && direction === 'ltr'
- * The biggest line width minus the difference between line width determines the left offset,
- * and negatively offset each line by their own width.
+ * Because the line origin starts on the right, each line needs to be offset by its own width.
  * 
  * ------
  *   ----
@@ -189,7 +222,7 @@ function getHorizontalLineOffset(lineWidth: number, biggestWidth: number, align:
 		(align === 'start' && direction === 'rtl') ||
 		(align === 'end' && direction === 'ltr')
 	) {
-		return biggestWidth - (lineWidth * 2);
+		return -lineWidth;
 	}
 
 	return 0;
