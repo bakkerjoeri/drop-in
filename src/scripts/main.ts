@@ -771,7 +771,7 @@ function drawText(
     align: CanvasTextAlign = 'left',
     color?: string,
 ) {
-    drawTextWithCustomFont(context, text, position, '/src/assets/fonts/BirdSeed/atlas.png', metrics, {
+    drawTextWithCustomFont(context, text, position, 'src/assets/fonts/BirdSeed/atlas.png', metrics, {
         align,
         baseline: 'top',
         color,
