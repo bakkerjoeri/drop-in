@@ -6,6 +6,8 @@ import { DropInEvents } from './events';
 import Keyboard from './keyboard';
 import spriteSheet from '../assets/sprites/sprites';
 import { choose, pick } from 'roll-the-bones';
+import { drawTextWithCustomFont } from './text';
+import metrics from '../assets/fonts/BirdSeed/metrics';
 
 export type Player = 'red' | 'blue' | 'yellow' | 'green' | 'purple' | 'white' | 'black';
 type GamePhase = 'settingUpGame' | 'playingRound';
@@ -501,7 +503,7 @@ eventEmitter.on('draw', (state: State, drawEvent: DrawEvent): State => {
 });
 
 function drawSettingUpGame(state: State, { context }: DrawEvent): void {
-    drawText('Set up a new game', { x: (gameSize.width / 2) + 0.5, y: 28 }, context, 'center');
+    drawText('Set up\na new game', { x: (gameSize.width / 2), y: 28 }, context, 'center');
     drawText('Board', { x: 150, y: 68 }, context, 'right');
     drawText(`${state.setup.boardHeight} rows`, { x: 172, y: 68 }, context);
     
@@ -763,17 +765,22 @@ function getBoardOrigin(boardSize: Size): Position {
 }
 
 function drawText(
-    string: string,
+    text: string,
     position: Position,
     context: CanvasRenderingContext2D,
     align: CanvasTextAlign = 'left',
     color: string = '#000000',
 ) {
-    context.textAlign = align;
-    context.textBaseline = 'top';
-    context.fillStyle = color;
-    context.font = '10px BirdSeed-Regular';
-    context.fillText(string, position.x, position.y);
+    // context.textAlign = align;
+    // context.textBaseline = 'top';
+    // context.fillStyle = color;
+    // context.font = '10px BirdSeed-Regular';
+    // context.fillText(string, position.x, position.y);
+
+    drawTextWithCustomFont(context, text, position, '/src/assets/fonts/BirdSeed/atlas.png', metrics, {
+        align,
+        baseline: 'top',
+    });
 }
 
 game.start();
