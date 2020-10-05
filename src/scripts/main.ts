@@ -12,7 +12,7 @@ import metrics from '../assets/fonts/BirdSeed/metrics';
 export type Player = 'red' | 'blue' | 'yellow' | 'green' | 'purple' | 'white' | 'black';
 type GamePhase = 'settingUpGame' | 'playingRound';
 type RoundPhase = 'start' | 'startTurn' | 'decideMove' | 'endTurn' | 'end';
-type SetupSteps = 'boardHeight' | 'boardWidth' | 'amountOfPlayers' | 'connectToWin' | 'startRound';
+type SetupSteps = 'boardHeight' | 'boardWidth' | 'amountOfPlayers' | 'amountToConnect' | 'onConnect' | 'startRound';
 
 interface State extends GameState {
     game: {
@@ -24,8 +24,9 @@ interface State extends GameState {
         boardWidth: number;
         boardHeight: number;
         amountOfPlayers: number;
-        connectToWin: number;
+        amountToConnect: number;
         currentlySelectedStep: SetupSteps;
+        onConnect: 'win' | 'lose';
     },
     round: {
         isPhaseNew: boolean;
@@ -34,7 +35,8 @@ interface State extends GameState {
         gameBoard: GameBoard | null;
         boardSize: Size;
         positionToPlacePiece: number;
-        connectToWin: number;
+        amountToConnect: number;
+        onConnect: 'win' | 'lose';
         players: Player[];
         currentPlayer: Player | null;
         winner: Player | null;
@@ -56,13 +58,14 @@ const defaultBoardSize = {
     height: 6,
 };
 
-const defaultConnectToWin = 4;
+const defaultAmountToConnect = 4;
 
 const setupSteps: SetupSteps[] = [
     'boardHeight',
     'boardWidth',
     'amountOfPlayers',
-    'connectToWin',
+    'amountToConnect',
+    'onConnect',
     'startRound',
 ]
 
@@ -82,8 +85,8 @@ const boardWidthMin = 2;
 const boardWidthMax = 18;
 const amountOfPlayersMin = 2;
 const amountOfPlayersMax = 7;
-const connectToWinMin = 3;
-const connectToWinMax = 8;
+const amountToConnectMin = 3;
+const amountToConnectMax = 8;
 
 const eventEmitter = new EventEmitter<DropInEvents>();
 const game = new Game<State>(gameSize, eventEmitter, {
@@ -98,8 +101,9 @@ const game = new Game<State>(gameSize, eventEmitter, {
             boardWidth: defaultBoardSize.width,
             boardHeight: defaultBoardSize.height,
             amountOfPlayers: 2,
-            connectToWin: 4,
+            amountToConnect: defaultAmountToConnect,
             currentlySelectedStep: setupSteps[0],
+            onConnect: 'win',
         },
         round: {
             isPhaseNew: true,
@@ -107,7 +111,8 @@ const game = new Game<State>(gameSize, eventEmitter, {
             nextPhase: 'start',
             gameBoard: null,
             boardSize: defaultBoardSize,
-            connectToWin: defaultConnectToWin,
+            amountToConnect: defaultAmountToConnect,
+            onConnect: 'win',
             players: [],
             currentPlayer: null,
             positionToPlacePiece: 0,
@@ -200,7 +205,7 @@ function updateRoundStartTurn(state: State): State {
 
 function updateRoundEndTurn(state: State): State {
     const gameBoard = state.round.gameBoard as GameBoard;
-    const winner = findWinner(gameBoard.tiles, state.round.connectToWin);
+    const winner = findWinner(gameBoard.tiles, state.round.amountToConnect);
 
     if (winner) {
         return {
@@ -410,8 +415,12 @@ eventEmitter.on('keyPressed', (state: State, { key }): State => {
             state.setup.boardHeight = Math.min(boardHeightMax, state.setup.boardHeight + 1);
         }
 
-        if (state.setup.currentlySelectedStep === 'connectToWin') {
-            state.setup.connectToWin = Math.min(connectToWinMax, state.setup.connectToWin + 1);
+        if (state.setup.currentlySelectedStep === 'onConnect') {
+            state.setup.onConnect = state.setup.onConnect === 'win' ? 'lose' : 'win';
+        }
+
+        if (state.setup.currentlySelectedStep === 'amountToConnect') {
+            state.setup.amountToConnect = Math.min(amountToConnectMax, state.setup.amountToConnect + 1);
         }
     }
 
@@ -433,8 +442,12 @@ eventEmitter.on('keyPressed', (state: State, { key }): State => {
             state.setup.boardHeight = Math.max(boardHeightMin, state.setup.boardHeight - 1);
         }
 
-        if (state.setup.currentlySelectedStep === 'connectToWin') {
-            state.setup.connectToWin = Math.max(connectToWinMin, state.setup.connectToWin - 1);
+        if (state.setup.currentlySelectedStep === 'onConnect') {
+            state.setup.onConnect = state.setup.onConnect === 'win' ? 'lose' : 'win';
+        }
+
+        if (state.setup.currentlySelectedStep === 'amountToConnect') {
+            state.setup.amountToConnect = Math.max(amountToConnectMin, state.setup.amountToConnect - 1);
         }
     }
 
@@ -449,7 +462,8 @@ eventEmitter.on('keyPressed', (state: State, { key }): State => {
                 height: state.setup.boardHeight,
             },
             players: pick(allPlayers, state.setup.amountOfPlayers),
-            connectToWin: state.setup.connectToWin,
+            amountToConnect: state.setup.amountToConnect,
+            onConnect: state.setup.onConnect,
         }
 
         return state;
@@ -542,23 +556,31 @@ function drawSettingUpGame(state: State, { context }: DrawEvent): void {
         }
     }
 
-    drawText('How many to win?', { x: 150, y: 118 }, context, 'right');
-    drawText(`connect ${state.setup.connectToWin}`, { x: 172, y: 118 }, context);
+    drawText('Connect how many?', { x: 150, y: 118 }, context, 'right');
+    drawText(`connect ${state.setup.amountToConnect}`, { x: 172, y: 118 }, context);
 
-    if (state.setup.currentlySelectedStep === 'connectToWin') {
-        if (state.setup.connectToWin > connectToWinMin) {
+    if (state.setup.currentlySelectedStep === 'amountToConnect') {
+        if (state.setup.amountToConnect > amountToConnectMin) {
             drawSprite(getSprite(state, 'arrow-left'), context, { x: 160, y: 118 });
         }
 
-        if (state.setup.connectToWin < connectToWinMax) {
+        if (state.setup.amountToConnect < amountToConnectMax) {
             drawSprite(getSprite(state, 'arrow-right'), context, { x: 230, y: 118 });
         }
     }
 
-    drawText('start', { x: 172, y: 138 }, context);
+    drawText(`Connect ${state.setup.amountToConnect} to`, { x: 150, y: 138 }, context, 'right');
+    drawText(state.setup.onConnect, { x: 172, y: 138 }, context);
+
+    if (state.setup.currentlySelectedStep === 'onConnect') {
+        drawSprite(getSprite(state, 'arrow-left'), context, { x: 160, y: 138 });
+        drawSprite(getSprite(state, 'arrow-right'), context, { x: 230, y: 138 });
+    }
+
+    drawText('start', { x: 172, y: 158 }, context);
 
     if (state.setup.currentlySelectedStep === 'startRound') {
-        drawSprite(getSprite(state, 'arrow-right'), context, { x: 160, y: 138 });
+        drawSprite(getSprite(state, 'arrow-right'), context, { x: 160, y: 158 });
     }
 }
 
@@ -602,7 +624,11 @@ function drawRoundEnd(state: State, { context }: DrawEvent): void {
             }
         );
 
-        drawText('wins!', { x: (gameSize.width / 2) - 2, y: 8 }, context);
+        if (state.round.onConnect === 'win') {
+            drawText('wins!', { x: (gameSize.width / 2), y: 8 }, context);
+        } else {
+            drawText('has lost...', { x: (gameSize.width / 2) - 2, y: 8 }, context);
+        }
     } else {
         drawText('tie...', { x: (gameSize.width / 2) + 0.5, y: 8 }, context, 'center');
     }
